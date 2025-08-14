@@ -93,7 +93,12 @@
 
   const detectUserLocation = async () => {
     try {
-      const response = await fetch('https://ipapi.co/json/');
+      // Headers básicos sin cache-control para evitar CORS
+      const response = await fetch('https://ipapi.co/json/', {
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
       const data = await response.json();
       if (data.country === 'BR') {
         state.language = 'pt';
