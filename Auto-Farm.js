@@ -3,8 +3,8 @@
     START_X: 742,
     START_Y: 1148,
     PIXELS_PER_LINE: 100,
-    DELAY: 3000, // Aumentado a 3 segundos para evitar rate limiting de Cloudflare
-    REQUEST_DELAY: 2000, // Delay adicional entre requests para ser más amigable con CF
+    DELAY: 5000, // Aumentado a 5 segundos para ser más conservador con CF
+    REQUEST_DELAY: 3000, // Delay aumentado a 3s antes de cada request
     THEME: {
       primary: '#000000',
       secondary: '#111111',
@@ -34,30 +34,29 @@
       // Delay antes de cada request para evitar rate limiting
       await sleep(CONFIG.REQUEST_DELAY);
       
+      // Headers mínimos para evitar CORS issues
+      const cleanHeaders = {
+        'Accept': 'application/json, text/plain, */*',
+        ...options.headers
+      };
+      
       const res = await fetch(url, {
         credentials: 'include',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'application/json, text/plain, */*',
-          'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
-          ...options.headers
-        },
+        headers: cleanHeaders,
         ...options
       });
       
       // Verificar si Cloudflare está bloqueando
       if (res.status === 429 || res.status === 403) {
         console.log('Rate limited by Cloudflare, waiting longer...');
-        await sleep(10000); // Esperar 10 segundos si hay rate limit
+        await sleep(15000); // Esperar 15 segundos si hay rate limit
         return null;
       }
       
       return await res.json();
     } catch (e) {
       console.log('Request failed:', e.message);
-      await sleep(5000); // Esperar 5 segundos en caso de error
+      await sleep(8000); // Esperar 8 segundos en caso de error
       return null;
     }
   };
@@ -140,7 +139,7 @@
       } else if (paintResult === null) {
         // Request falló, probablemente por Cloudflare
         updateUI(state.language === 'pt' ? '⚠️ Conexión bloqueada, reintentando...' : '⚠️ Connection blocked, retrying...', 'error');
-        await sleep(15000); // Esperar más tiempo si hay bloqueo
+        await sleep(20000); // Esperar más tiempo si hay bloqueo (20s)
       } else {
         updateUI(state.language === 'pt' ? '❌ Falha ao pintar' : '❌ Failed to paint', 'error');
       }

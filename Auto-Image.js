@@ -4,8 +4,8 @@
     TRANSPARENCY_THRESHOLD: 100,
     WHITE_THRESHOLD: 250,
     LOG_INTERVAL: 10,
-    PAINT_DELAY: 3500, // Delay entre pinturas de pixels para CF
-    REQUEST_DELAY: 2500, // Delay entre requests para CF
+    PAINT_DELAY: 5000, // Delay aumentado entre pinturas de pixels
+    REQUEST_DELAY: 4000, // Delay aumentado entre requests
     MAX_RETRIES: 3, // Máximo número de reintentos
     THEME: {
       primary: '#000000',
@@ -374,18 +374,15 @@
           // Delay antes de cada request para ser amigable con CF
           await Utils.sleep(CONFIG.REQUEST_DELAY);
           
+          // Headers mínimos para evitar CORS issues
+          const cleanHeaders = {
+            'Content-Type': 'text/plain;charset=UTF-8',
+            'Accept': 'application/json, text/plain, */*'
+          };
+          
           const res = await fetch(`https://backend.wplace.live/s0/pixel/${regionX}/${regionY}`, {
             method: 'POST',
-            headers: { 
-              'Content-Type': 'text/plain;charset=UTF-8',
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'application/json, text/plain, */*',
-              'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-              'Cache-Control': 'no-cache',
-              'Pragma': 'no-cache',
-              'Referer': 'https://wplace.live/',
-              'Origin': 'https://wplace.live'
-            },
+            headers: cleanHeaders,
             credentials: 'include',
             body: JSON.stringify({ coords: [pixelX, pixelY], colors: [color] })
           });
@@ -393,7 +390,7 @@
           // Manejar rate limiting de Cloudflare
           if (res.status === 429) {
             console.log('Rate limited by Cloudflare, waiting...');
-            await Utils.sleep(15000); // Esperar 15 segundos
+            await Utils.sleep(20000); // Esperar 20 segundos
             retries++;
             continue;
           }
@@ -410,7 +407,7 @@
         } catch (error) {
           console.log(`Request failed (attempt ${retries + 1}):`, error.message);
           retries++;
-          await Utils.sleep(5000 * retries); // Backoff exponencial
+          await Utils.sleep(10000 * retries); // Backoff exponencial más largo
         }
       }
       
@@ -422,19 +419,19 @@
         // Delay antes del request
         await Utils.sleep(CONFIG.REQUEST_DELAY);
         
+        // Headers mínimos
+        const cleanHeaders = {
+          'Accept': 'application/json, text/plain, */*'
+        };
+        
         const res = await fetch('https://backend.wplace.live/me', { 
           credentials: 'include',
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Cache-Control': 'no-cache',
-            'Referer': 'https://wplace.live/'
-          }
+          headers: cleanHeaders
         });
         
         if (res.status === 429 || res.status === 403) {
           console.log('Rate limited getting charges');
-          await Utils.sleep(10000);
+          await Utils.sleep(15000);
           return { charges: 0, cooldown: CONFIG.COOLDOWN_DEFAULT };
         }
         
