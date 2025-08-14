@@ -4,6 +4,9 @@
     TRANSPARENCY_THRESHOLD: 100,
     WHITE_THRESHOLD: 250,
     LOG_INTERVAL: 10,
+    PAINT_DELAY: 3500, // Delay entre pinturas de pixels para CF
+    REQUEST_DELAY: 2500, // Delay entre requests para CF
+    MAX_RETRIES: 3, // Máximo número de reintentos
     THEME: {
       primary: '#000000',
       secondary: '#111111',
@@ -364,31 +367,84 @@
 
   const WPlaceService = {
     async paintPixelInRegion(regionX, regionY, pixelX, pixelY, color) {
-      try {
-        const res = await fetch(`https://backend.wplace.live/s0/pixel/${regionX}/${regionY}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          credentials: 'include',
-          body: JSON.stringify({ coords: [pixelX, pixelY], colors: [color] })
-        });
-        const data = await res.json();
-        return data?.painted === 1;
-      } catch {
-        return false;
+      let retries = 0;
+      
+      while (retries < CONFIG.MAX_RETRIES) {
+        try {
+          // Delay antes de cada request para ser amigable con CF
+          await Utils.sleep(CONFIG.REQUEST_DELAY);
+          
+          const res = await fetch(`https://backend.wplace.live/s0/pixel/${regionX}/${regionY}`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'text/plain;charset=UTF-8',
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'application/json, text/plain, */*',
+              'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
+              'Referer': 'https://wplace.live/',
+              'Origin': 'https://wplace.live'
+            },
+            credentials: 'include',
+            body: JSON.stringify({ coords: [pixelX, pixelY], colors: [color] })
+          });
+          
+          // Manejar rate limiting de Cloudflare
+          if (res.status === 429) {
+            console.log('Rate limited by Cloudflare, waiting...');
+            await Utils.sleep(15000); // Esperar 15 segundos
+            retries++;
+            continue;
+          }
+          
+          if (res.status === 403) {
+            console.log('Blocked by Cloudflare, waiting longer...');
+            await Utils.sleep(30000); // Esperar 30 segundos
+            retries++;
+            continue;
+          }
+          
+          const data = await res.json();
+          return data?.painted === 1;
+        } catch (error) {
+          console.log(`Request failed (attempt ${retries + 1}):`, error.message);
+          retries++;
+          await Utils.sleep(5000 * retries); // Backoff exponencial
+        }
       }
+      
+      return false; // Falló después de todos los reintentos
     },
     
     async getCharges() {
       try {
+        // Delay antes del request
+        await Utils.sleep(CONFIG.REQUEST_DELAY);
+        
         const res = await fetch('https://backend.wplace.live/me', { 
-          credentials: 'include' 
+          credentials: 'include',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Cache-Control': 'no-cache',
+            'Referer': 'https://wplace.live/'
+          }
         });
+        
+        if (res.status === 429 || res.status === 403) {
+          console.log('Rate limited getting charges');
+          await Utils.sleep(10000);
+          return { charges: 0, cooldown: CONFIG.COOLDOWN_DEFAULT };
+        }
+        
         const data = await res.json();
         return { 
           charges: data.charges?.count || 0, 
           cooldown: data.charges?.cooldownMs || CONFIG.COOLDOWN_DEFAULT 
         };
-      } catch {
+      } catch (error) {
+        console.log('Error getting charges:', error.message);
         return { charges: 0, cooldown: CONFIG.COOLDOWN_DEFAULT };
       }
     }
@@ -1224,6 +1280,9 @@
         const pixelX = startX + x;
         const pixelY = startY + y;
         
+        // Delay adicional antes de pintar cada pixel para ser amigable con CF
+        await Utils.sleep(CONFIG.PAINT_DELAY);
+        
         const success = await WPlaceService.paintPixelInRegion(
           regionX,
           regionY,
@@ -1249,6 +1308,10 @@
               total: state.totalPixels 
             });
           }
+        } else {
+          // Si falla, esperamos más tiempo antes del siguiente intento
+          console.log(`Failed to paint pixel at ${pixelX},${pixelY}, waiting longer...`);
+          await Utils.sleep(CONFIG.PAINT_DELAY * 2);
         }
       }
     }
